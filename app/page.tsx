@@ -1,6 +1,7 @@
 "use client"
 
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
+import { RemoteStorage } from "remote-storage"
 
 import { Button } from "@/components/ui/button"
 
@@ -13,6 +14,9 @@ type ShoppingAd = {
   contact: string
 }
 
+const ADS_STORAGE_KEY = "shopping-ads"
+const REMOTE_USER_ID_KEY = "shopping-helper-user-id"
+
 export default function Page() {
   const [title, setTitle] = useState("Need help with grocery shopping")
   const [street, setStreet] = useState("")
@@ -21,6 +25,41 @@ export default function Page() {
   const [contact, setContact] = useState("")
   const [ads, setAds] = useState<ShoppingAd[]>([])
   const [notice, setNotice] = useState("")
+  const [isRemoteReady, setIsRemoteReady] = useState(false)
+  const remoteStorageRef = useRef<RemoteStorage | null>(null)
+
+  useEffect(() => {
+    async function loadAds() {
+      try {
+        let userId = window.localStorage.getItem(REMOTE_USER_ID_KEY)
+
+        if (!userId) {
+          userId = crypto.randomUUID()
+          window.localStorage.setItem(REMOTE_USER_ID_KEY, userId)
+        }
+
+        const remoteStorage = new RemoteStorage({
+          serverAddress: "https://remote-storage.xiduzo.com/",
+          userId,
+          instanceId: "my-website-shopping-board",
+        })
+
+        remoteStorageRef.current = remoteStorage
+        setIsRemoteReady(true)
+
+        const remoteAds = await remoteStorage.getItem<ShoppingAd[]>(ADS_STORAGE_KEY)
+        if (Array.isArray(remoteAds)) {
+          setAds(remoteAds)
+        }
+      } catch {
+        setNotice(
+          "Could not connect to remote storage right now. You can still post, and try again shortly.",
+        )
+      }
+    }
+
+    void loadAds()
+  }, [])
 
   const matchingAds = useMemo(() => {
     if (!street.trim()) {
@@ -31,6 +70,14 @@ export default function Page() {
       (ad) => ad.street.toLowerCase() === street.trim().toLowerCase(),
     )
   }, [ads, street])
+
+  async function persistAds(nextAds: ShoppingAd[]) {
+    if (!remoteStorageRef.current) {
+      return
+    }
+
+    await remoteStorageRef.current.setItem(ADS_STORAGE_KEY, nextAds)
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -53,8 +100,28 @@ export default function Page() {
       contact: trimmedContact,
     }
 
-    setAds((currentAds) => [newAd, ...currentAds])
-    setNotice(`Your ad is now visible to neighbors on ${trimmedStreet}.`)
+    setAds((currentAds) => {
+      const nextAds = [newAd, ...currentAds]
+
+      void persistAds(nextAds)
+        .then(() => {
+          setNotice(`Your ad is now visible to neighbors on ${trimmedStreet}.`)
+        })
+        .catch(() => {
+          setNotice(
+            "Your ad was added, but syncing to remote storage failed. Please try again.",
+          )
+        })
+
+      return nextAds
+    })
+
+    if (!isRemoteReady) {
+      setNotice(
+        "Ad created locally while remote storage connects. It will sync when connection is available.",
+      )
+    }
+
     setDetails("")
     setPreferredTime("")
   }
@@ -152,6 +219,11 @@ export default function Page() {
             {street.trim()
               ? `Showing requests from ${street.trim()}.`
               : "Add your street to filter local requests."}
+          </p>
+          <p className="mt-1 text-xs text-stone-600">
+            {isRemoteReady
+              ? "Remote storage connected"
+              : "Connecting to remote storage..."}
           </p>
 
           <div className="mt-4 space-y-3">
