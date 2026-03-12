@@ -15,7 +15,7 @@ type ShoppingAd = {
 }
 
 const ADS_STORAGE_KEY = "shopping-ads"
-const REMOTE_USER_ID_KEY = "shopping-helper-user-id"
+const SHARED_REMOTE_USER_ID = "my-website-community-board"
 
 export default function Page() {
   const [title, setTitle] = useState("Need help with grocery shopping")
@@ -31,16 +31,9 @@ export default function Page() {
   useEffect(() => {
     async function loadAds() {
       try {
-        let userId = window.localStorage.getItem(REMOTE_USER_ID_KEY)
-
-        if (!userId) {
-          userId = crypto.randomUUID()
-          window.localStorage.setItem(REMOTE_USER_ID_KEY, userId)
-        }
-
         const remoteStorage = new RemoteStorage({
           serverAddress: "https://remote-storage.xiduzo.com/",
-          userId,
+          userId: SHARED_REMOTE_USER_ID,
           instanceId: "my-website-shopping-board",
         })
 
